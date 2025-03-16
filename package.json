@@ -1,8 +1,10 @@
 {
   "name": "playlistify-api",
   "version": "1.0.0",
+  "description": "API para gestionar sesiones en Playlistify",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -16,7 +18,6 @@
     "url": "https://github.com/iKaz71/playlistify-api/issues"
   },
   "homepage": "https://github.com/iKaz71/playlistify-api#readme",
-  "description": "",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
