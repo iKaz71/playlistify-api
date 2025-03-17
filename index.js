@@ -102,6 +102,28 @@ app.get('/queue/:sessionId', async (req, res) => {
     if (!queueSnapshot.exists()) return res.status(404).json({ message: 'Sesión no encontrada' });
     res.json(queueSnapshot.val());
 });
+ // Eliminar un video de la cola
+app.delete('/queue/remove/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { guestId } = req.body; // Se obtiene el guestId del cuerpo de la solicitud
+
+    const queueRef = db.ref(`queues/${sessionId}`);
+    const queueSnapshot = await queueRef.once('value');
+    let queue = queueSnapshot.val();
+
+    if (!queue) {
+        return res.status(404).json({ message: 'Cola no encontrada' });
+    }
+
+    // Filtrar la cola para eliminar solo los videos agregados por el usuario que hace la solicitud
+    const updatedQueue = queue.filter(video => video.addedBy !== guestId);
+
+    // Actualizar la cola en la base de datos
+    await queueRef.set(updatedQueue);
+
+    res.json({ message: 'Video eliminado si existía', queue: updatedQueue });
+});
+
 
 // Control de reproducción (play, pause, skip)
 app.post('/playback/play', async (req, res) => {
@@ -114,6 +136,54 @@ app.post('/playback/play', async (req, res) => {
     await db.ref(`playbackState/${sessionId}`).set(playbackState);
     res.json({ message: 'Reproducción iniciada', playbackState });
 });
+
+app.post('/playback/pause', async (req, res) => {
+    const { sessionId } = req.body;
+    const playbackRef = db.ref(`playbackState/${sessionId}`);
+    const playbackSnapshot = await playbackRef.once('value');
+    const playbackState = playbackSnapshot.val();
+
+    if (!playbackState || !playbackState.currentVideo) {
+        return res.status(400).json({ message: 'No hay video en reproducción' });
+    }
+
+    playbackState.playing = false;
+    await playbackRef.set(playbackState);
+
+    res.json({ message: 'Reproducción pausada', playbackState });
+});
+
+app.post('/playback/skip', async (req, res) => {
+    const { sessionId } = req.body;
+    const queueRef = db.ref(`queues/${sessionId}`);
+    const queueSnapshot = await queueRef.once('value');
+    let queue = queueSnapshot.val();
+
+    if (!queue || queue.length <= 1) {
+        return res.status(400).json({ message: 'No hay suficientes videos en la cola para saltar' });
+    }
+
+    queue.shift(); // Eliminar el primer video de la cola
+    await queueRef.set(queue);
+
+    const playbackState = { playing: true, currentVideo: queue[0] };
+    await db.ref(`playbackState/${sessionId}`).set(playbackState);
+
+    res.json({ message: 'Video saltado', playbackState });
+});
+
+app.get('/playback/status/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const playbackRef = db.ref(`playbackState/${sessionId}`);
+    const playbackSnapshot = await playbackRef.once('value');
+
+    if (!playbackSnapshot.exists()) {
+        return res.status(404).json({ message: 'Estado de reproducción no encontrado' });
+    }
+
+    res.json(playbackSnapshot.val());
+});
+
 
 const PORT = 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
