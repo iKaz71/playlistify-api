@@ -10,9 +10,14 @@ app.use(cors());
 // Inicializar Firebase
 const serviceAccount = require('./serviceAccountKey.json'); // Asegúrate de tener la clave JSON descargada desde Firebase
 admin.initializeApp({
-    credential: admin.credential.cert(require('./serviceAccountKey.json')),
-    databaseURL: 'https://playlistify-f1a04-default-rtdb.firebaseio.com/'
-});
+    credential: admin.credential.cert({
+      project_id: process.env.FIREBASE_PROJECT_ID,
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL
+    }),
+    databaseURL: process.env.FIREBASE_DATABASE_URL
+  });
+  
 
 const db = admin.database();
 
