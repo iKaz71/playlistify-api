@@ -68,8 +68,17 @@ app.post('/session/approve', async (req, res) => {
     
     res.json({ message: approve ? 'Usuario aceptado' : 'Solicitud rechazada' });
 });
-
-
+// Obtener información de una sesión por su ID
+app.get('/session/:id', async (req, res) => {
+    const { id } = req.params;
+    const sessionSnapshot = await db.ref(`sessions/${id}`).once('value');
+    
+    if (!sessionSnapshot.exists()) {
+        return res.status(404).json({ message: 'Sesión no encontrada' });
+    }
+    
+    res.json(sessionSnapshot.val());
+});
 
 // Agregar un video a la cola de reproducción
 app.post('/queue/add', async (req, res) => {
