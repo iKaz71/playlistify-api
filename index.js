@@ -8,6 +8,7 @@ app.use(cors());
 
 // Simulación de almacenamiento en memoria
 let sessions = {};
+let queues = {}; // Nueva estructura para almacenar las colas de reproducción
 
 // Función para generar código de 4 dígitos
 const generateCode = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -17,6 +18,7 @@ app.post('/session/create', (req, res) => {
     const sessionId = uuidv4();
     const code = generateCode();
     sessions[sessionId] = { code, host: sessionId, guests: {}, pendingRequests: {} };
+    queues[sessionId] = []; // Inicializar cola vacía
     res.json({ sessionId, code });
 });
 
@@ -58,6 +60,42 @@ app.get('/session/:id', (req, res) => {
     const session = sessions[req.params.id];
     if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
     res.json(session);
+});
+
+// Agregar un video a la cola de reproducción
+app.post('/queue/add', (req, res) => {
+    const { sessionId, guestId, videoId, title } = req.body;
+    
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    if (!sessions[sessionId].guests[guestId] && sessions[sessionId].host !== guestId) {
+        return res.status(403).json({ message: 'No estás en la sesión' });
+    }
+    
+    queues[sessionId].push({ videoId, title, addedBy: guestId });
+    res.json({ message: 'Video agregado', queue: queues[sessionId] });
+});
+
+// Obtener la cola de reproducción
+app.get('/queue/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    res.json(queues[sessionId]);
+});
+
+// Eliminar un video de la cola
+app.delete('/queue/remove/:sessionId/:videoId', (req, res) => {
+    const { sessionId, videoId } = req.params;
+    const { guestId } = req.body;
+    
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    
+    const session = sessions[sessionId];
+    if (!session.guests[guestId] && session.host !== guestId) {
+        return res.status(403).json({ message: 'No estás autorizado para eliminar este video' });
+    }
+    
+    queues[sessionId] = queues[sessionId].filter(video => video.videoId !== videoId || (guestId !== session.host && video.addedBy !== guestId));
+    res.json({ message: 'Video eliminado', queue: queues[sessionId] });
 });
 
 const PORT = 3000;
