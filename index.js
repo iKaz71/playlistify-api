@@ -1,161 +1,97 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
-const http = require('http');
-const { Server } = require('socket.io');
+const admin = require('firebase-admin');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
-
 app.use(express.json());
 app.use(cors());
 
-// Simulación de almacenamiento en memoria
-let sessions = {};
-let queues = {}; // Nueva estructura para almacenar las colas de reproducción
-let playbackState = {}; // Estado de reproducción por sesión
+// Inicializar Firebase
+const serviceAccount = require('./serviceAccountKey.json'); // Asegúrate de tener la clave JSON descargada desde Firebase
+admin.initializeApp({
+    credential: admin.credential.cert(require('./serviceAccountKey.json')),
+    databaseURL: 'https://playlistify-f1a04-default-rtdb.firebaseio.com/'
+});
 
-// Función para generar código de 4 dígitos
-const generateCode = () => Math.floor(1000 + Math.random() * 9000).toString();
+const db = admin.database();
 
 // Crear una sesión (solo el anfitrión puede hacerlo)
-app.post('/session/create', (req, res) => {
+app.post('/session/create', async (req, res) => {
     const sessionId = uuidv4();
-    const code = generateCode();
-    sessions[sessionId] = { code, host: sessionId, guests: {}, pendingRequests: {} };
-    queues[sessionId] = []; // Inicializar cola vacía
-    playbackState[sessionId] = { playing: false, currentVideo: null }; // Inicializar estado de reproducción
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    await db.ref(`sessions/${sessionId}`).set({ code, host: sessionId, guests: {}, pendingRequests: {} });
+    await db.ref(`queues/${sessionId}`).set([]);
+    await db.ref(`playbackState/${sessionId}`).set({ playing: false, currentVideo: null });
     res.json({ sessionId, code });
 });
 
 // Unirse a una sesión (el anfitrión debe aceptar)
-app.post('/session/join', (req, res) => {
+app.post('/session/join', async (req, res) => {
     const { code, guestId } = req.body;
-    const session = Object.entries(sessions).find(([_, s]) => s.code === code);
+    const sessionsSnapshot = await db.ref('sessions').once('value');
+    const sessions = sessionsSnapshot.val();
     
-    if (!session) return res.status(404).json({ message: 'Código inválido' });
+    const sessionEntry = Object.entries(sessions).find(([_, s]) => s.code === code);
+    if (!sessionEntry) return res.status(404).json({ message: 'Código inválido' });
     
-    const [sessionId, sessionData] = session;
-    
-    if (sessionData.guests[guestId]) {
-        return res.json({ message: 'Ya estás en la sesión' });
-    }
-    
+    const [sessionId, sessionData] = sessionEntry;
+    sessionData.pendingRequests = sessionData.pendingRequests || {};
     sessionData.pendingRequests[guestId] = true;
     res.json({ message: 'Solicitud enviada al anfitrión', sessionId });
 });
 
 // El anfitrión aprueba o rechaza la solicitud
-app.post('/session/approve', (req, res) => {
+app.post('/session/approve', async (req, res) => {
     const { sessionId, guestId, approve } = req.body;
-    const session = sessions[sessionId];
+    const sessionSnapshot = await db.ref(`sessions/${sessionId}`).once('value');
+    const session = sessionSnapshot.val();
     
     if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
-    
-    if (!session.pendingRequests[guestId]) return res.status(400).json({ message: 'No hay solicitud pendiente' });
     
     if (approve) {
         session.guests[guestId] = true;
-        io.to(sessionId).emit('user_approved', { guestId }); // Notificación en tiempo real
+        await db.ref(`sessions/${sessionId}/guests`).set(session.guests);
     }
     delete session.pendingRequests[guestId];
+    await db.ref(`sessions/${sessionId}/pendingRequests`).set(session.pendingRequests);
     res.json({ message: approve ? 'Usuario aceptado' : 'Solicitud rechazada' });
 });
 
-// Obtener información de la sesión
-app.get('/session/:id', (req, res) => {
-    const session = sessions[req.params.id];
-    if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
-    res.json(session);
-});
-
-// Sincronización en tiempo real con WebSockets
-io.on('connection', (socket) => {
-    socket.on('join_session', (sessionId) => {
-        socket.join(sessionId);
-        socket.emit('session_data', { queue: queues[sessionId], playback: playbackState[sessionId] });
-    });
-});
-
 // Agregar un video a la cola de reproducción
-app.post('/queue/add', (req, res) => {
+app.post('/queue/add', async (req, res) => {
     const { sessionId, guestId, videoId, title } = req.body;
     
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    if (!sessions[sessionId].guests[guestId] && sessions[sessionId].host !== guestId) {
-        return res.status(403).json({ message: 'No estás en la sesión' });
-    }
+    const sessionSnapshot = await db.ref(`sessions/${sessionId}`).once('value');
+    if (!sessionSnapshot.exists()) return res.status(404).json({ message: 'Sesión no encontrada' });
     
-    const video = { videoId, title, addedBy: guestId };
-    queues[sessionId].push(video);
-    io.to(sessionId).emit('queue_updated', queues[sessionId]); // Notificación en tiempo real
-    res.json({ message: 'Video agregado', queue: queues[sessionId] });
+    const queueRef = db.ref(`queues/${sessionId}`);
+    const queueSnapshot = await queueRef.once('value');
+    const queue = queueSnapshot.val() || [];
+    
+    queue.push({ videoId, title, addedBy: guestId });
+    await queueRef.set(queue);
+    res.json({ message: 'Video agregado', queue });
 });
 
 // Obtener la cola de reproducción
-app.get('/queue/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    res.json(queues[sessionId]);
-});
-
-// Eliminar un video de la cola
-app.delete('/queue/remove/:sessionId/:videoId', (req, res) => {
-    const { sessionId, videoId } = req.params;
-    const { guestId } = req.body;
-    
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    
-    const session = sessions[sessionId];
-    if (!session.guests[guestId] && session.host !== guestId) {
-        return res.status(403).json({ message: 'No estás autorizado para eliminar este video' });
-    }
-    
-    queues[sessionId] = queues[sessionId].filter(video => video.videoId !== videoId || (guestId !== session.host && video.addedBy !== guestId));
-    res.json({ message: 'Video eliminado', queue: queues[sessionId] });
+app.get('/queue/:sessionId', async (req, res) => {
+    const queueSnapshot = await db.ref(`queues/${req.params.sessionId}`).once('value');
+    if (!queueSnapshot.exists()) return res.status(404).json({ message: 'Sesión no encontrada' });
+    res.json(queueSnapshot.val());
 });
 
 // Control de reproducción (play, pause, skip)
-app.post('/playback/play', (req, res) => {
+app.post('/playback/play', async (req, res) => {
     const { sessionId } = req.body;
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    const queueSnapshot = await db.ref(`queues/${sessionId}`).once('value');
+    const queue = queueSnapshot.val();
+    if (!queue || queue.length === 0) return res.status(400).json({ message: 'No hay videos en la cola' });
     
-    if (queues[sessionId].length === 0) return res.status(400).json({ message: 'No hay videos en la cola' });
-    
-    playbackState[sessionId] = { playing: true, currentVideo: queues[sessionId][0] };
-    io.to(sessionId).emit('playback_updated', playbackState[sessionId]); // Notificación en tiempo real
-    res.json({ message: 'Reproducción iniciada', playbackState: playbackState[sessionId] });
-});
-
-app.post('/playback/pause', (req, res) => {
-    const { sessionId } = req.body;
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    
-    playbackState[sessionId].playing = false;
-    res.json({ message: 'Reproducción pausada', playbackState: playbackState[sessionId] });
-});
-
-app.post('/playback/skip', (req, res) => {
-    const { sessionId } = req.body;
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    
-    if (queues[sessionId].length > 1) {
-        queues[sessionId].shift(); // Eliminar el primer video
-        playbackState[sessionId] = { playing: true, currentVideo: queues[sessionId][0] };
-    } else {
-        playbackState[sessionId] = { playing: false, currentVideo: null };
-    }
-    
-    res.json({ message: 'Video saltado', playbackState: playbackState[sessionId] });
-});
-
-// Obtener estado de reproducción
-app.get('/playback/status/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
-    res.json(playbackState[sessionId]);
+    const playbackState = { playing: true, currentVideo: queue[0] };
+    await db.ref(`playbackState/${sessionId}`).set(playbackState);
+    res.json({ message: 'Reproducción iniciada', playbackState });
 });
 
 const PORT = 3000;
-server.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
