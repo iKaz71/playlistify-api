@@ -9,6 +9,7 @@ app.use(cors());
 // Simulación de almacenamiento en memoria
 let sessions = {};
 let queues = {}; // Nueva estructura para almacenar las colas de reproducción
+let playbackState = {}; // Estado de reproducción por sesión
 
 // Función para generar código de 4 dígitos
 const generateCode = () => Math.floor(1000 + Math.random() * 9000).toString();
@@ -19,6 +20,7 @@ app.post('/session/create', (req, res) => {
     const code = generateCode();
     sessions[sessionId] = { code, host: sessionId, guests: {}, pendingRequests: {} };
     queues[sessionId] = []; // Inicializar cola vacía
+    playbackState[sessionId] = { playing: false, currentVideo: null }; // Inicializar estado de reproducción
     res.json({ sessionId, code });
 });
 
@@ -96,6 +98,46 @@ app.delete('/queue/remove/:sessionId/:videoId', (req, res) => {
     
     queues[sessionId] = queues[sessionId].filter(video => video.videoId !== videoId || (guestId !== session.host && video.addedBy !== guestId));
     res.json({ message: 'Video eliminado', queue: queues[sessionId] });
+});
+
+// Control de reproducción (play, pause, skip)
+app.post('/playback/play', (req, res) => {
+    const { sessionId } = req.body;
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    
+    if (queues[sessionId].length === 0) return res.status(400).json({ message: 'No hay videos en la cola' });
+    
+    playbackState[sessionId] = { playing: true, currentVideo: queues[sessionId][0] };
+    res.json({ message: 'Reproducción iniciada', playbackState: playbackState[sessionId] });
+});
+
+app.post('/playback/pause', (req, res) => {
+    const { sessionId } = req.body;
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    
+    playbackState[sessionId].playing = false;
+    res.json({ message: 'Reproducción pausada', playbackState: playbackState[sessionId] });
+});
+
+app.post('/playback/skip', (req, res) => {
+    const { sessionId } = req.body;
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    
+    if (queues[sessionId].length > 1) {
+        queues[sessionId].shift(); // Eliminar el primer video
+        playbackState[sessionId] = { playing: true, currentVideo: queues[sessionId][0] };
+    } else {
+        playbackState[sessionId] = { playing: false, currentVideo: null };
+    }
+    
+    res.json({ message: 'Video saltado', playbackState: playbackState[sessionId] });
+});
+
+// Obtener estado de reproducción
+app.get('/playback/status/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    if (!sessions[sessionId]) return res.status(404).json({ message: 'Sesión no encontrada' });
+    res.json(playbackState[sessionId]);
 });
 
 const PORT = 3000;
