@@ -52,21 +52,23 @@ app.post('/session/approve', async (req, res) => {
     
     if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
 
-    // Asegurar que session.guests existe
-    if (!session.guests) {
-        session.guests = {};
-    }
+    // Asegurar que session.guests y session.pendingRequests existen
+    session.guests = session.guests || {};
+    session.pendingRequests = session.pendingRequests || {};
 
     if (approve) {
         session.guests[guestId] = true;
         await db.ref(`sessions/${sessionId}/guests`).set(session.guests);
     }
 
-    delete session.pendingRequests[guestId];
-    await db.ref(`sessions/${sessionId}/pendingRequests`).set(session.pendingRequests);
+    if (session.pendingRequests[guestId]) {
+        delete session.pendingRequests[guestId];
+        await db.ref(`sessions/${sessionId}/pendingRequests`).set(session.pendingRequests);
+    }
     
     res.json({ message: approve ? 'Usuario aceptado' : 'Solicitud rechazada' });
 });
+
 
 
 // Agregar un video a la cola de reproducción
