@@ -7,8 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Inicializar Firebase
-const serviceAccount = require('./serviceAccountKey.json'); // Asegúrate de tener la clave JSON descargada desde Firebase
+// Inicializar Firebase sin usar un archivo JSON
 admin.initializeApp({
     credential: admin.credential.cert({
       project_id: process.env.FIREBASE_PROJECT_ID,
@@ -18,7 +17,6 @@ admin.initializeApp({
     databaseURL: process.env.FIREBASE_DATABASE_URL
   });
   
-
 const db = admin.database();
 
 // Crear una sesión (solo el anfitrión puede hacerlo)
