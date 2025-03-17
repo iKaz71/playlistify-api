@@ -1,8 +1,13 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
 app.use(express.json());
 app.use(cors());
 
@@ -52,6 +57,7 @@ app.post('/session/approve', (req, res) => {
     
     if (approve) {
         session.guests[guestId] = true;
+        io.to(sessionId).emit('user_approved', { guestId }); // Notificación en tiempo real
     }
     delete session.pendingRequests[guestId];
     res.json({ message: approve ? 'Usuario aceptado' : 'Solicitud rechazada' });
@@ -64,6 +70,14 @@ app.get('/session/:id', (req, res) => {
     res.json(session);
 });
 
+// Sincronización en tiempo real con WebSockets
+io.on('connection', (socket) => {
+    socket.on('join_session', (sessionId) => {
+        socket.join(sessionId);
+        socket.emit('session_data', { queue: queues[sessionId], playback: playbackState[sessionId] });
+    });
+});
+
 // Agregar un video a la cola de reproducción
 app.post('/queue/add', (req, res) => {
     const { sessionId, guestId, videoId, title } = req.body;
@@ -73,7 +87,9 @@ app.post('/queue/add', (req, res) => {
         return res.status(403).json({ message: 'No estás en la sesión' });
     }
     
-    queues[sessionId].push({ videoId, title, addedBy: guestId });
+    const video = { videoId, title, addedBy: guestId };
+    queues[sessionId].push(video);
+    io.to(sessionId).emit('queue_updated', queues[sessionId]); // Notificación en tiempo real
     res.json({ message: 'Video agregado', queue: queues[sessionId] });
 });
 
@@ -108,6 +124,7 @@ app.post('/playback/play', (req, res) => {
     if (queues[sessionId].length === 0) return res.status(400).json({ message: 'No hay videos en la cola' });
     
     playbackState[sessionId] = { playing: true, currentVideo: queues[sessionId][0] };
+    io.to(sessionId).emit('playback_updated', playbackState[sessionId]); // Notificación en tiempo real
     res.json({ message: 'Reproducción iniciada', playbackState: playbackState[sessionId] });
 });
 
@@ -141,4 +158,4 @@ app.get('/playback/status/:sessionId', (req, res) => {
 });
 
 const PORT = 3000;
-app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
