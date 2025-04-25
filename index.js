@@ -19,13 +19,14 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// Crear una sesión
+// Crear una sesión (corregido: ahora guarda también sessionId)
 app.post('/session/create', async (req, res) => {
     const sessionId = uuidv4();
     const code = Math.floor(1000 + Math.random() * 9000).toString();
 
     await db.ref(`sessions/${sessionId}`).set({
         code,
+        sessionId,  // <-- 🔥 Aquí agregamos el sessionId explícitamente
         host: sessionId,
         guests: {},
         pendingRequests: {}
@@ -62,6 +63,16 @@ app.get('/queue/:sessionId', async (req, res) => {
     }
 
     res.json(queueSnapshot.val());
+});
+
+// Obtener información de una sesión
+app.get('/session/:sessionId', async (req, res) => {
+    const sessionSnapshot = await db.ref(`sessions/${req.params.sessionId}`).once('value');
+    if (!sessionSnapshot.exists()) {
+        return res.status(404).json({ message: 'Sesión no encontrada' });
+    }
+
+    res.json(sessionSnapshot.val());
 });
 
 // Iniciar el servidor
