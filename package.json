@@ -1,28 +1,13 @@
 {
   "name": "playlistify-api",
   "version": "1.0.0",
-  "description": "API para gestionar sesiones en Playlistify",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/iKaz71/playlistify-api.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/iKaz71/playlistify-api/issues"
-  },
-  "homepage": "https://github.com/iKaz71/playlistify-api#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "firebase-admin": "^13.2.0",
-    "socket.io": "^4.8.1",
-    "uuid": "^11.1.0"
+    "express": "^4.18.2",
+    "firebase-admin": "^11.0.0"
   }
 }
