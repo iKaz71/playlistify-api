@@ -1,4 +1,3 @@
-// index.js
 //--------------------------------------------
 //  Playlistify - API
 //--------------------------------------------
@@ -86,20 +85,6 @@ app.post('/session/verify', async (req, res) => {
   }
 });
 
-// Obtener cola
-app.get('/queue/:sessionId', async (req, res) => {
-  try {
-    const snap = await db.ref(`queues/${req.params.sessionId}`).once('value');
-    if (!snap.exists()) {
-      return res.status(404).json({ message: 'Sesión no encontrada' });
-    }
-    res.json(snap.val());
-  } catch (err) {
-    console.error('Error getting queue', err);
-    res.status(500).json({ message: 'Internal error' });
-  }
-});
-
 // Obtener datos de sesión
 app.get('/session/:sessionId', async (req, res) => {
   try {
@@ -114,7 +99,21 @@ app.get('/session/:sessionId', async (req, res) => {
   }
 });
 
-// Guardar anfitriones predeterminados desde la TV
+// Obtener cola
+app.get('/queue/:sessionId', async (req, res) => {
+  try {
+    const snap = await db.ref(`queues/${req.params.sessionId}`).once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ message: 'Sesión no encontrada' });
+    }
+    res.json(snap.val());
+  } catch (err) {
+    console.error('Error getting queue', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ➕ Agregar anfitriones predeterminados desde la TV
 app.post('/hosts/default', async (req, res) => {
   try {
     const { sessionId, defaultHosts } = req.body;
@@ -126,6 +125,38 @@ app.post('/hosts/default', async (req, res) => {
     res.json({ ok: true, updated: defaultHosts.length });
   } catch (err) {
     console.error('Error saving default hosts', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// ❌ Eliminar canción (solo anfitrión o dueño de la canción)
+app.post('/queue/remove', async (req, res) => {
+  try {
+    const { sessionId, videoId, userId } = req.body;
+    if (!sessionId || !videoId || !userId) {
+      return res.status(400).json({ message: 'Datos incompletos' });
+    }
+
+    const queueSnap = await db.ref(`queues/${sessionId}`).once('value');
+    const queue = queueSnap.val() || [];
+
+    const sessionSnap = await db.ref(`sessions/${sessionId}`).once('value');
+    const session = sessionSnap.val();
+
+    if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
+
+    const isHost = session.host === userId || (session.guests && session.guests[userId] === 'host');
+
+    const updatedQueue = queue.filter(cancion => {
+      const puedeEliminar = isHost || cancion.usuario === userId;
+      return !(cancion.id === videoId && puedeEliminar);
+    });
+
+    await db.ref(`queues/${sessionId}`).set(updatedQueue);
+
+    res.json({ ok: true, updatedCount: updatedQueue.length });
+  } catch (err) {
+    console.error('Error removing song', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
