@@ -114,6 +114,22 @@ app.get('/session/:sessionId', async (req, res) => {
   }
 });
 
+// Guardar anfitriones predeterminados desde la TV
+app.post('/hosts/default', async (req, res) => {
+  try {
+    const { sessionId, defaultHosts } = req.body;
+    if (!sessionId || !Array.isArray(defaultHosts)) {
+      return res.status(400).json({ message: 'Datos inválidos' });
+    }
+
+    await db.ref(`hosts/default/${sessionId}`).set(defaultHosts);
+    res.json({ ok: true, updated: defaultHosts.length });
+  } catch (err) {
+    console.error('Error saving default hosts', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 //-------------------------------------------------
 //  Arrancar servidor
 //-------------------------------------------------
