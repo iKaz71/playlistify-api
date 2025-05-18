@@ -131,12 +131,22 @@ app.post('/queue/add', async (req, res) => {
 
     await ref.set(queue);
 
+    // 🔄 Si es la primera canción, iniciar reproducción automáticamente
+    if (queue.length === 1) {
+      await db.ref(`playbackState/${sessionId}`).set({
+        playing: true,
+        currentVideo: nuevaCancion
+      });
+      console.log(`▶ Reproducción iniciada automáticamente en ${sessionId}`);
+    }
+
     res.json({ ok: true, message: 'Canción agregada' });
   } catch (err) {
     console.error('Error agregando canción', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 
 // ➕ Agregar anfitriones predeterminados desde la TV
