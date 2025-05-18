@@ -113,6 +113,32 @@ app.get('/queue/:sessionId', async (req, res) => {
   }
 });
 
+// Agregar canción a la cola (para reemplazar escritura directa desde frontend)
+app.post('/queue/add', async (req, res) => {
+  try {
+    const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
+
+    if (!sessionId || !id || !titulo || !usuario || !thumbnailUrl || !duration) {
+      return res.status(400).json({ message: 'Datos incompletos' });
+    }
+
+    const ref = db.ref(`queues/${sessionId}`);
+    const snapshot = await ref.once('value');
+    const queue = snapshot.val() || [];
+
+    const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration };
+    queue.push(nuevaCancion);
+
+    await ref.set(queue);
+
+    res.json({ ok: true, message: 'Canción agregada' });
+  } catch (err) {
+    console.error('Error agregando canción', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+
 // ➕ Agregar anfitriones predeterminados desde la TV
 app.post('/hosts/default', async (req, res) => {
   try {
