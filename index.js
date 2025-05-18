@@ -114,6 +114,7 @@ app.get('/queue/:sessionId', async (req, res) => {
 });
 
 // Agregar canción a la cola (para reemplazar escritura directa desde frontend)
+// Agregar canción a la cola
 app.post('/queue/add', async (req, res) => {
   try {
     const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
@@ -126,12 +127,16 @@ app.post('/queue/add', async (req, res) => {
     const snapshot = await ref.once('value');
     const queue = snapshot.val() || [];
 
-    const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration };
+    // 🕒 Convertimos duración si no está en formato ISO
+    const isIsoFormat = /^PT(\d+H)?(\d+M)?(\d+S)?$/.test(duration);
+    const durationIso = isIsoFormat ? duration : convertirADuracionISO(duration);
+
+    const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration: durationIso };
     queue.push(nuevaCancion);
 
     await ref.set(queue);
 
-    // 🔄 Si es la primera canción, iniciar reproducción automáticamente
+    // ▶ Reproducir automáticamente si es la primera
     if (queue.length === 1) {
       await db.ref(`playbackState/${sessionId}`).set({
         playing: true,
@@ -146,6 +151,20 @@ app.post('/queue/add', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
+// Función auxiliar para convertir duración "3:14" → "PT3M14S"
+function convertirADuracionISO(duracion) {
+  const partes = duracion.split(':').map(Number);
+  if (partes.length === 2) {
+    const [min, sec] = partes;
+    return `PT${min}M${sec}S`;
+  } else if (partes.length === 3) {
+    const [hor, min, sec] = partes;
+    return `PT${hor}H${min}M${sec}S`;
+  }
+  return 'PT0S';
+}
+
 
 
 
