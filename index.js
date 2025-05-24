@@ -47,7 +47,7 @@ app.post('/session/create', async (_req, res) => {
       pendingRequests: {}
     });
 
-    await db.ref(`queues/${sessionId}`).set([]);
+    await db.ref(`queues/${sessionId}`).set({}); // ✅ Iniciar como objeto
     await db.ref(`playbackState/${sessionId}`).set({
       playing: false,
       currentVideo: null
@@ -113,8 +113,7 @@ app.get('/queue/:sessionId', async (req, res) => {
   }
 });
 
-// Agregar canción a la cola (para reemplazar escritura directa desde frontend)
-// Agregar canción a la cola
+// Agregar canción a la cola (nuevo con .push())
 app.post('/queue/add', async (req, res) => {
   try {
     const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
@@ -124,20 +123,17 @@ app.post('/queue/add', async (req, res) => {
     }
 
     const ref = db.ref(`queues/${sessionId}`);
-    const snapshot = await ref.once('value');
-    const queue = snapshot.val() || [];
 
-    // 🕒 Convertimos duración si no está en formato ISO
     const isIsoFormat = /^PT(\d+H)?(\d+M)?(\d+S)?$/.test(duration);
     const durationIso = isIsoFormat ? duration : convertirADuracionISO(duration);
 
     const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration: durationIso };
-    queue.push(nuevaCancion);
+    const pushRef = await ref.push(nuevaCancion);
 
-    await ref.set(queue);
+    const playbackSnap = await db.ref(`playbackState/${sessionId}`).once('value');
+    const playbackState = playbackSnap.val();
 
-    // ▶ Reproducir automáticamente si es la primera
-    if (queue.length === 1) {
+    if (!playbackState || !playbackState.currentVideo) {
       await db.ref(`playbackState/${sessionId}`).set({
         playing: true,
         currentVideo: nuevaCancion
@@ -145,7 +141,7 @@ app.post('/queue/add', async (req, res) => {
       console.log(`▶ Reproducción iniciada automáticamente en ${sessionId}`);
     }
 
-    res.json({ ok: true, message: 'Canción agregada' });
+    res.json({ ok: true, message: 'Canción agregada', key: pushRef.key });
   } catch (err) {
     console.error('Error agregando canción', err);
     res.status(500).json({ message: 'Internal error' });
@@ -165,9 +161,6 @@ function convertirADuracionISO(duracion) {
   return 'PT0S';
 }
 
-
-
-
 // ➕ Agregar anfitriones predeterminados desde la TV
 app.post('/hosts/default', async (req, res) => {
   try {
@@ -184,7 +177,7 @@ app.post('/hosts/default', async (req, res) => {
   }
 });
 
-// ❌ Eliminar canción (solo anfitrión o dueño de la canción)
+// ❌ Eliminar canción (aún sin actualizar a .push())
 app.post('/queue/remove', async (req, res) => {
   try {
     const { sessionId, videoId, userId } = req.body;
@@ -193,7 +186,7 @@ app.post('/queue/remove', async (req, res) => {
     }
 
     const queueSnap = await db.ref(`queues/${sessionId}`).once('value');
-    const queue = queueSnap.val() || [];
+    const queue = queueSnap.val() || {};
 
     const sessionSnap = await db.ref(`sessions/${sessionId}`).once('value');
     const session = sessionSnap.val();
@@ -202,14 +195,17 @@ app.post('/queue/remove', async (req, res) => {
 
     const isHost = session.host === userId || (session.guests && session.guests[userId] === 'host');
 
-    const updatedQueue = queue.filter(cancion => {
+    const updatedQueue = {};
+    for (const [key, cancion] of Object.entries(queue)) {
       const puedeEliminar = isHost || cancion.usuario === userId;
-      return !(cancion.id === videoId && puedeEliminar);
-    });
+      if (!(cancion.id === videoId && puedeEliminar)) {
+        updatedQueue[key] = cancion;
+      }
+    }
 
     await db.ref(`queues/${sessionId}`).set(updatedQueue);
 
-    res.json({ ok: true, updatedCount: updatedQueue.length });
+    res.json({ ok: true, updatedCount: Object.keys(updatedQueue).length });
   } catch (err) {
     console.error('Error removing song', err);
     res.status(500).json({ message: 'Internal error' });
