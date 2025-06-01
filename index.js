@@ -47,7 +47,8 @@ app.post('/session/create', async (_req, res) => {
       pendingRequests: {}
     });
 
-    await db.ref(`queues/${sessionId}`).set({}); // ✅ Iniciar como objeto
+    await db.ref(`queues/${sessionId}`).set({});
+    await db.ref(`queuesOrder/${sessionId}`).set([]); // 🔥 Iniciar array de orden vacío
     await db.ref(`playbackState/${sessionId}`).set({
       playing: false,
       currentVideo: null
@@ -99,7 +100,7 @@ app.get('/session/:sessionId', async (req, res) => {
   }
 });
 
-// Obtener cola
+// Obtener cola (regresa objeto)
 app.get('/queue/:sessionId', async (req, res) => {
   try {
     const snap = await db.ref(`queues/${req.params.sessionId}`).once('value');
@@ -113,7 +114,21 @@ app.get('/queue/:sessionId', async (req, res) => {
   }
 });
 
-// Agregar canción a la cola (nuevo con .push())
+// Obtener orden de la cola
+app.get('/queueOrder/:sessionId', async (req, res) => {
+  try {
+    const snap = await db.ref(`queuesOrder/${req.params.sessionId}`).once('value');
+    if (!snap.exists()) {
+      return res.status(404).json({ message: 'Orden no encontrada' });
+    }
+    res.json(snap.val());
+  } catch (err) {
+    console.error('Error getting queue order', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// Agregar canción a la cola (y array de orden)
 app.post('/queue/add', async (req, res) => {
   try {
     const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
@@ -130,6 +145,14 @@ app.post('/queue/add', async (req, res) => {
     const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration: durationIso };
     const pushRef = await ref.push(nuevaCancion);
 
+    // Actualiza el array de orden
+    const orderRef = db.ref(`queuesOrder/${sessionId}`);
+    const orderSnap = await orderRef.once('value');
+    const order = orderSnap.val() || [];
+    order.push(pushRef.key);
+    await orderRef.set(order);
+
+    // Estado de reproducción
     const playbackSnap = await db.ref(`playbackState/${sessionId}`).once('value');
     const playbackState = playbackSnap.val();
 
@@ -177,11 +200,11 @@ app.post('/hosts/default', async (req, res) => {
   }
 });
 
-// ❌ Eliminar canción (aún sin actualizar a .push())
+// ❌ Eliminar canción (de objeto y de array de orden)
 app.post('/queue/remove', async (req, res) => {
   try {
-    const { sessionId, videoId, userId } = req.body;
-    if (!sessionId || !videoId || !userId) {
+    const { sessionId, pushKey, userId } = req.body;
+    if (!sessionId || !pushKey || !userId) {
       return res.status(400).json({ message: 'Datos incompletos' });
     }
 
@@ -194,18 +217,26 @@ app.post('/queue/remove', async (req, res) => {
     if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
 
     const isHost = session.host === userId || (session.guests && session.guests[userId] === 'host');
+    const cancion = queue[pushKey];
 
-    const updatedQueue = {};
-    for (const [key, cancion] of Object.entries(queue)) {
-      const puedeEliminar = isHost || cancion.usuario === userId;
-      if (!(cancion.id === videoId && puedeEliminar)) {
-        updatedQueue[key] = cancion;
-      }
+    if (!cancion) return res.status(404).json({ message: 'Canción no encontrada' });
+
+    // Solo permite eliminar si eres host o quien la subió
+    if (!(isHost || cancion.usuario === userId)) {
+      return res.status(403).json({ message: 'No tienes permiso para eliminar esta canción' });
     }
 
-    await db.ref(`queues/${sessionId}`).set(updatedQueue);
+    // Elimina la canción del objeto
+    await db.ref(`queues/${sessionId}/${pushKey}`).remove();
 
-    res.json({ ok: true, updatedCount: Object.keys(updatedQueue).length });
+    // Elimina la key del array de orden
+    const orderRef = db.ref(`queuesOrder/${sessionId}`);
+    const orderSnap = await orderRef.once('value');
+    let order = orderSnap.val() || [];
+    order = order.filter(key => key !== pushKey);
+    await orderRef.set(order);
+
+    res.json({ ok: true, message: 'Canción eliminada' });
   } catch (err) {
     console.error('Error removing song', err);
     res.status(500).json({ message: 'Internal error' });
@@ -221,75 +252,37 @@ app.listen(PORT, () => {
 });
 
 //-------------------------------------------------
-//  Mover canción a "Play Next"
+//  Mover canción a "Play Next" usando array de orden
 //-------------------------------------------------
 app.post('/queue/playnext', async (req, res) => {
   try {
-    const { sessionId, videoId, userId } = req.body;
-    if (!sessionId || !videoId) {
+    const { sessionId, pushKey } = req.body;
+
+    if (!sessionId || !pushKey) {
       return res.status(400).json({ message: 'Datos incompletos' });
     }
 
-    // Obtener la cola actual
-    const queueSnap = await db.ref(`queues/${sessionId}`).once('value');
-    const queue = queueSnap.val() || {};
+    // Leer el array de orden actual
+    const orderRef = db.ref(`queuesOrder/${sessionId}`);
+    const orderSnap = await orderRef.once('value');
+    const order = orderSnap.val();
 
-    // Obtener la canción actual en playbackState
-    const playbackSnap = await db.ref(`playbackState/${sessionId}/currentVideo`).once('value');
-    const current = playbackSnap.val();
-
-    // No hay playback actual, aborta
-    if (!current || !current.id) {
-      return res.status(400).json({ message: 'No hay canción en reproducción' });
-    }
-
-    // Buscar la canción a mover
-    let playNextSong = null;
-    let playNextKey = null;
-    for (const [key, cancion] of Object.entries(queue)) {
-      if (cancion.id === videoId) {
-        playNextSong = cancion;
-        playNextKey = key;
-        break;
-      }
-    }
-    if (!playNextSong) {
+    if (!Array.isArray(order) || !order.includes(pushKey)) {
       return res.status(404).json({ message: 'Canción no encontrada en la cola' });
     }
 
-    // Quitarla de la cola
-    delete queue[playNextKey];
+    // Quitar el pushKey de su posición actual
+    const newOrder = order.filter(key => key !== pushKey);
 
-    // Construir nueva cola: después de la actual, insertar la canción movida
-    const nuevaCola = {};
-    let insertado = false;
-    for (const [key, cancion] of Object.entries(queue)) {
-      // Agregar la canción normalmente
-      nuevaCola[key] = cancion;
-      // Insertar después de la actual
-      if (!insertado && cancion.id === current.id) {
-        // Inserta la canción a mover con un nuevo pushID
-        const newKey = db.ref().child(`queues/${sessionId}`).push().key;
-        nuevaCola[newKey] = playNextSong;
-        insertado = true;
-      }
-    }
+    // Insertar después del actual (posición 1, después de la que está sonando)
+    newOrder.splice(1, 0, pushKey);
 
-    // Si por algún error la actual no está en cola, pon al inicio
-    if (!insertado) {
-      const newKey = db.ref().child(`queues/${sessionId}`).push().key;
-      const resultCola = {};
-      resultCola[newKey] = playNextSong;
-      Object.assign(resultCola, nuevaCola);
-      await db.ref(`queues/${sessionId}`).set(resultCola);
-    } else {
-      await db.ref(`queues/${sessionId}`).set(nuevaCola);
-    }
+    // Guardar el nuevo array en Firebase
+    await orderRef.set(newOrder);
 
-    res.json({ ok: true, message: 'Canción movida como siguiente en la cola' });
+    res.json({ ok: true, message: 'Canción movida como siguiente en la cola', newOrder });
   } catch (err) {
     console.error('Error en Play Next', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
-
