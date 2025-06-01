@@ -219,3 +219,77 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🎧 Playlistify API corriendo en el puerto ${PORT}`);
 });
+
+//-------------------------------------------------
+//  Mover canción a "Play Next"
+//-------------------------------------------------
+app.post('/queue/playnext', async (req, res) => {
+  try {
+    const { sessionId, videoId, userId } = req.body;
+    if (!sessionId || !videoId) {
+      return res.status(400).json({ message: 'Datos incompletos' });
+    }
+
+    // Obtener la cola actual
+    const queueSnap = await db.ref(`queues/${sessionId}`).once('value');
+    const queue = queueSnap.val() || {};
+
+    // Obtener la canción actual en playbackState
+    const playbackSnap = await db.ref(`playbackState/${sessionId}/currentVideo`).once('value');
+    const current = playbackSnap.val();
+
+    // No hay playback actual, aborta
+    if (!current || !current.id) {
+      return res.status(400).json({ message: 'No hay canción en reproducción' });
+    }
+
+    // Buscar la canción a mover
+    let playNextSong = null;
+    let playNextKey = null;
+    for (const [key, cancion] of Object.entries(queue)) {
+      if (cancion.id === videoId) {
+        playNextSong = cancion;
+        playNextKey = key;
+        break;
+      }
+    }
+    if (!playNextSong) {
+      return res.status(404).json({ message: 'Canción no encontrada en la cola' });
+    }
+
+    // Quitarla de la cola
+    delete queue[playNextKey];
+
+    // Construir nueva cola: después de la actual, insertar la canción movida
+    const nuevaCola = {};
+    let insertado = false;
+    for (const [key, cancion] of Object.entries(queue)) {
+      // Agregar la canción normalmente
+      nuevaCola[key] = cancion;
+      // Insertar después de la actual
+      if (!insertado && cancion.id === current.id) {
+        // Inserta la canción a mover con un nuevo pushID
+        const newKey = db.ref().child(`queues/${sessionId}`).push().key;
+        nuevaCola[newKey] = playNextSong;
+        insertado = true;
+      }
+    }
+
+    // Si por algún error la actual no está en cola, pon al inicio
+    if (!insertado) {
+      const newKey = db.ref().child(`queues/${sessionId}`).push().key;
+      const resultCola = {};
+      resultCola[newKey] = playNextSong;
+      Object.assign(resultCola, nuevaCola);
+      await db.ref(`queues/${sessionId}`).set(resultCola);
+    } else {
+      await db.ref(`queues/${sessionId}`).set(nuevaCola);
+    }
+
+    res.json({ ok: true, message: 'Canción movida como siguiente en la cola' });
+  } catch (err) {
+    console.error('Error en Play Next', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
