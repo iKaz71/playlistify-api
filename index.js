@@ -216,9 +216,15 @@ app.post('/queue/remove', async (req, res) => {
 
     if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
 
-    const isHost = session.host === userId || (session.guests && session.guests[userId] === 'host');
-    const cancion = queue[pushKey];
+    // --------- MODIFICACIÓN AQUÍ ----------
+    // Considera "tv" o "host" como superusuario
+    const isHost = userId === 'tv'
+                || userId === 'host'
+                || session.host === userId
+                || (session.guests && session.guests[userId] === 'host');
+    // --------------------------------------
 
+    const cancion = queue[pushKey];
     if (!cancion) return res.status(404).json({ message: 'Canción no encontrada' });
 
     // Solo permite eliminar si eres host o quien la subió
@@ -242,6 +248,7 @@ app.post('/queue/remove', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 //-------------------------------------------------
 //  Arrancar servidor
