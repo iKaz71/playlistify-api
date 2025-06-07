@@ -271,13 +271,21 @@ app.post('/queue/playnext', async (req, res) => {
       return res.status(404).json({ message: 'Canción no encontrada en la cola' });
     }
 
-    // Quitar el pushKey de su posición actual
-    const newOrder = order.filter(key => key !== pushKey);
+    // Si está en reproducción (posición 0), no hacer nada
+    if (order[0] === pushKey) {
+      return res.json({ ok: false, message: 'La canción ya está en reproducción', order });
+    }
 
-    // Insertar después del actual (posición 1, después de la que está sonando)
+    // Si ya está en la posición 1, tampoco moverla
+    if (order[1] === pushKey) {
+      return res.json({ ok: false, message: 'La canción ya es la siguiente en la cola', order });
+    }
+
+    // Quitar la canción de su posición actual
+    const newOrder = order.filter(key => key !== pushKey);
+    // Insertarla en la posición 1
     newOrder.splice(1, 0, pushKey);
 
-    // Guardar el nuevo array en Firebase
     await orderRef.set(newOrder);
 
     res.json({ ok: true, message: 'Canción movida como siguiente en la cola', newOrder });
@@ -286,3 +294,4 @@ app.post('/queue/playnext', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
