@@ -214,10 +214,7 @@ app.post('/queue/remove', async (req, res) => {
     const sessionSnap = await db.ref(`sessions/${sessionId}`).once('value');
     const session = sessionSnap.val();
 
-    if (!session) return res.status(404).json({ message: 'Sesión no encontrada' });
-
     // --------- MODIFICACIÓN AQUÍ ----------
-    // Considera "tv" o "host" como superusuario
     const isHost = userId === 'tv'
                 || userId === 'host'
                 || session.host === userId
@@ -242,12 +239,23 @@ app.post('/queue/remove', async (req, res) => {
     order = order.filter(key => key !== pushKey);
     await orderRef.set(order);
 
+    // NUEVO BLOQUE: Limpiar playbackState si ya no quedan canciones
+    const updatedOrderSnap = await orderRef.once('value');
+    const updatedOrder = updatedOrderSnap.val() || [];
+    if (updatedOrder.length === 0) {
+      await db.ref(`playbackState/${sessionId}`).set({
+        playing: false,
+        currentVideo: null
+      });
+    }
+
     res.json({ ok: true, message: 'Canción eliminada' });
   } catch (err) {
     console.error('Error removing song', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 
 //-------------------------------------------------
