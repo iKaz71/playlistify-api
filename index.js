@@ -291,11 +291,6 @@ app.post('/queue/playnext', async (req, res) => {
       return res.json({ ok: false, message: 'La canción ya está en reproducción', order });
     }
 
-    // Si ya está en la posición 1, tampoco moverla
-    if (order[1] === pushKey) {
-      return res.json({ ok: false, message: 'La canción ya es la siguiente en la cola', order });
-    }
-
     // Quitar la canción de su posición actual
     const newOrder = order.filter(key => key !== pushKey);
     // Insertarla en la posición 1
