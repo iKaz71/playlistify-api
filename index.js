@@ -33,7 +33,9 @@ app.get('/', (_req, res) => {
   res.json({ ok: true, message: 'Playlistify API running' });
 });
 
+//-------------------------------------------------
 // Crear sesión
+//-------------------------------------------------
 app.post('/session/create', async (_req, res) => {
   try {
     const sessionId = uuidv4();
@@ -61,7 +63,9 @@ app.post('/session/create', async (_req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Verificar código
+//-------------------------------------------------
 app.post('/session/verify', async (req, res) => {
   try {
     const { code } = req.body;
@@ -86,7 +90,9 @@ app.post('/session/verify', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Obtener datos de sesión
+//-------------------------------------------------
 app.get('/session/:sessionId', async (req, res) => {
   try {
     const snap = await db.ref(`sessions/${req.params.sessionId}`).once('value');
@@ -100,7 +106,9 @@ app.get('/session/:sessionId', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Obtener cola (regresa objeto)
+//-------------------------------------------------
 app.get('/queue/:sessionId', async (req, res) => {
   try {
     const snap = await db.ref(`queues/${req.params.sessionId}`).once('value');
@@ -114,7 +122,10 @@ app.get('/queue/:sessionId', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Obtener orden de la cola
+//-------------------------------------------------
+
 app.get('/queueOrder/:sessionId', async (req, res) => {
   try {
     const snap = await db.ref(`queuesOrder/${req.params.sessionId}`).once('value');
@@ -128,7 +139,9 @@ app.get('/queueOrder/:sessionId', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Agregar canción a la cola (y array de orden)
+//-------------------------------------------------
 app.post('/queue/add', async (req, res) => {
   try {
     const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
@@ -171,7 +184,9 @@ app.post('/queue/add', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
 // Función auxiliar para convertir duración "3:14" → "PT3M14S"
+//-------------------------------------------------
 function convertirADuracionISO(duracion) {
   const partes = duracion.split(':').map(Number);
   if (partes.length === 2) {
@@ -184,7 +199,9 @@ function convertirADuracionISO(duracion) {
   return 'PT0S';
 }
 
+//-------------------------------------------------
 // ➕ Agregar anfitriones predeterminados desde la TV
+//-------------------------------------------------
 app.post('/hosts/default', async (req, res) => {
   try {
     const { sessionId, defaultHosts } = req.body;
@@ -200,7 +217,10 @@ app.post('/hosts/default', async (req, res) => {
   }
 });
 
+
+//-------------------------------------------------
 // ❌ Eliminar canción (de objeto y de array de orden)
+//-------------------------------------------------
 app.post('/queue/remove', async (req, res) => {
   try {
     const { sessionId, pushKey, userId } = req.body;
@@ -286,7 +306,7 @@ app.post('/queue/playnext', async (req, res) => {
       return res.status(404).json({ message: 'Canción no encontrada en la cola' });
     }
 
-    // Si está en reproducción (posición 0), no hacer nada
+    // Si está en reproducción (posición 0), no hacer nada v:
     if (order[0] === pushKey) {
       return res.json({ ok: false, message: 'La canción ya está en reproducción', order });
     }
@@ -304,4 +324,166 @@ app.post('/queue/playnext', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
+
+
+//-------------------------------------------------
+//  Agregar o actualizar usuario en una sala
+//-------------------------------------------------
+
+app.post('/session/:sessionId/user', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { uid, nombre, dispositivo, rol } = req.body;
+    if (!uid || !nombre || !dispositivo) {
+      return res.status(400).json({ message: 'Datos incompletos' });
+    }
+
+    // Default a invitado si mando rol
+    const rolFinal = rol || 'invitado';
+
+    await db.ref(`sessions/${sessionId}/usuarios/${uid}`).set({
+      nombre,
+      dispositivo,
+      rol: rolFinal
+    });
+
+    res.json({ ok: true, message: 'Usuario registrado/actualizado', uid });
+  } catch (err) {
+    console.error('Error agregando usuario', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+//-------------------------------------------------
+//  Cambiar rol de usuario (ascender/degradar anfitrión)
+//-------------------------------------------------
+
+app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
+  try {
+    const { sessionId, uid } = req.params;
+    const { rol } = req.body;
+    if (!rol || !['anfitrion', 'invitado'].includes(rol)) {
+      return res.status(400).json({ message: 'Rol inválido' });
+    }
+
+    const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
+    const snap = await userRef.once('value');
+    if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    await userRef.update({ rol });
+    res.json({ ok: true, message: `Rol actualizado a ${rol}` });
+  } catch (err) {
+    console.error('Error cambiando rol', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+
+//-------------------------------------------------
+//  Obtener todos los usuarios de la sala
+//-------------------------------------------------
+
+
+app.get('/session/:sessionId/users', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const snap = await db.ref(`sessions/${sessionId}/usuarios`).once('value');
+    res.json(snap.val() || {});
+  } catch (err) {
+    console.error('Error obteniendo usuarios', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+//-------------------------------------------------
+//  Banear usuario
+//-------------------------------------------------
+
+app.post('/session/:sessionId/user/:uid/ban', async (req, res) => {
+  try {
+    const { sessionId, uid } = req.params;
+    const razon = req.body.razon || '';
+
+    await db.ref(`sessions/${sessionId}/baneados/${uid}`).set(true);
+    await db.ref(`sessions/${sessionId}/usuarios/${uid}`).remove();
+
+    res.json({ ok: true, message: 'Usuario baneado', uid, razon });
+  } catch (err) {
+    console.error('Error baneando usuario', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+//-------------------------------------------------
+// Desbanear usuario
+//-------------------------------------------------
+app.post('/session/:sessionId/user/:uid/unban', async (req, res) => {
+  try {
+    const { sessionId, uid } = req.params;
+    await db.ref(`sessions/${sessionId}/baneados/${uid}`).remove();
+    res.json({ ok: true, message: 'Usuario desbaneado', uid });
+  } catch (err) {
+    console.error('Error desbaneando usuario', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+//-------------------------------------------------
+// Obtener usuarios baneados
+//-------------------------------------------------
+app.get('/session/:sessionId/banned', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const snap = await db.ref(`sessions/${sessionId}/baneados`).once('value');
+    res.json(snap.val() || {});
+  } catch (err) {
+    console.error('Error obteniendo baneados', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+//-------------------------------------------------
+// Refrescar la sala: limpia la sala y genera un nuevo código de conexión
+//-------------------------------------------------
+app.post('/session/:sessionId/refresh', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Generar nuevo código
+    const newCode = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Limpiar la cola, el orden, el estado de reproducción y baneados
+    await db.ref(`queues/${sessionId}`).set({});
+    await db.ref(`queuesOrder/${sessionId}`).set([]);
+    await db.ref(`playbackState/${sessionId}`).set({ playing: false, currentVideo: null });
+    await db.ref(`sessions/${sessionId}/baneados`).set({});
+
+    // Actualizar el código de conexión
+    await db.ref(`sessions/${sessionId}/code`).set(newCode);
+
+    res.json({ ok: true, message: 'Sala refrescada, código actualizado', code: newCode });
+  } catch (err) {
+    console.error('Error refrescando sala', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+
+//-------------------------------------------------
+// Expulsar (kick) usuario
+//-------------------------------------------------
+
+app.post('/session/:sessionId/user/:uid/kick', async (req, res) => {
+  try {
+    const { sessionId, uid } = req.params;
+    await db.ref(`sessions/${sessionId}/usuarios/${uid}`).remove();
+    res.json({ ok: true, message: 'Usuario expulsado', uid });
+  } catch (err) {
+    console.error('Error expulsando usuario', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+
+
 
