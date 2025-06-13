@@ -345,7 +345,8 @@ app.post('/session/:sessionId/user', async (req, res) => {
     await db.ref(`sessions/${sessionId}/usuarios/${uid}`).set({
       nombre,
       dispositivo,
-      rol: rolFinal
+      rol: rolFinal,
+      lastSeen: Date.now()  // <-- Aquí SIEMPRE que registra/actualiza
     });
 
     res.json({ ok: true, message: 'Usuario registrado/actualizado', uid });
@@ -354,6 +355,7 @@ app.post('/session/:sessionId/user', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 //-------------------------------------------------
 //  Cambiar rol de usuario (ascender/degradar anfitrión)
@@ -516,17 +518,5 @@ app.post('/session/:sessionId/user/:uid/kick', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
-
-//-------------------------------------------------
-// Detectar Conectados 
-//-------------------------------------------------
-
-await db.ref(`sessions/${sessionId}/usuarios/${uid}`).update({
-  nombre,
-  dispositivo,
-  rol: rolFinal,
-  lastSeen: Date.now()
-});
-
 
 
