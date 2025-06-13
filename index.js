@@ -362,11 +362,34 @@ app.post('/session/:sessionId/user', async (req, res) => {
 app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
   try {
     const { sessionId, uid } = req.params;
-    const { rol } = req.body;
-    if (!rol || !['anfitrion', 'invitado'].includes(rol)) {
+    const { rol, adminUid } = req.body; // adminUid = el que hace el cambio
+
+    const allowedRoles = ['anfitrion', 'anfitrion_persistente', 'invitado'];
+    if (!rol || !allowedRoles.includes(rol)) {
       return res.status(400).json({ message: 'Rol inválido' });
     }
 
+    // Leer datos de quien hace la petición (adminUid)
+    const adminSnap = await db.ref(`sessions/${sessionId}/usuarios/${adminUid}`).once('value');
+    const adminData = adminSnap.val();
+    if (!adminData) return res.status(403).json({ message: 'Acceso denegado (no admin)' });
+
+    // Solo anfitrión persistente puede poner anfitrion_persistente
+    if (rol === 'anfitrion_persistente' && adminData.rol !== 'anfitrion_persistente') {
+      return res.status(403).json({ message: 'Solo el anfitrión persistente puede ascender a ese rol' });
+    }
+
+    // Solo anfitrión o anfitrion_persistente pueden ascender invitado a anfitrion
+    if (rol === 'anfitrion' && !['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
+      return res.status(403).json({ message: 'Solo anfitriones pueden ascender invitados' });
+    }
+
+    // No se permite degradar a anfitrion_persistente
+    if (adminData.rol !== 'anfitrion_persistente' && rol !== 'anfitrion') {
+      return res.status(403).json({ message: 'Solo el anfitrión persistente puede degradar a ese rol' });
+    }
+
+    // Actualizar rol del usuario
     const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
     const snap = await userRef.once('value');
     if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -380,6 +403,7 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
 });
 
 
+
 //-------------------------------------------------
 //  Obtener todos los usuarios de la sala
 //-------------------------------------------------
@@ -389,12 +413,21 @@ app.get('/session/:sessionId/users', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const snap = await db.ref(`sessions/${sessionId}/usuarios`).once('value');
-    res.json(snap.val() || {});
+    const usuarios = snap.val() || {};
+
+    // Marca "conectado" solo si lastSeen es reciente (menos de 40s)
+    const now = Date.now();
+    Object.entries(usuarios).forEach(([uid, u]) => {
+      usuarios[uid].conectado = u.lastSeen && now - u.lastSeen < 40000;
+    });
+
+    res.json(usuarios);
   } catch (err) {
     console.error('Error obteniendo usuarios', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 //-------------------------------------------------
 //  Banear usuario
@@ -484,6 +517,16 @@ app.post('/session/:sessionId/user/:uid/kick', async (req, res) => {
   }
 });
 
+//-------------------------------------------------
+// Detectar Conectados 
+//-------------------------------------------------
+
+await db.ref(`sessions/${sessionId}/usuarios/${uid}`).update({
+  nombre,
+  dispositivo,
+  rol: rolFinal,
+  lastSeen: Date.now()
+});
 
 
 
