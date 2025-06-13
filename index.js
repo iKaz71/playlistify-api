@@ -377,13 +377,23 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
     if (!adminData) return res.status(403).json({ message: 'Acceso denegado (no admin)' });
 
     // Solo anfitrión persistente puede poner anfitrion_persistente
-    if (rol === 'anfitrion_persistente' && adminData.rol !== 'anfitrion_persistente') {
-    // Excepción: permitir que el usuario se ascienta a sí mismo (escaneando QR)
-    if (adminUid !== uid) {
-    return res.status(403).json({ message: 'Solo el anfitrión persistente puede ascender a ese rol' });
+    if (rol === 'anfitrion_persistente') {
+      // Si el que hace la petición es el mismo usuario al que va a subir de rol (o sea, por QR propio)
+      if (adminUid === uid) {
+        // Permitimos que el anfitrión actual se ascienda a sí mismo (QR propio)
+        // Pero solo si ya es anfitrión (no invitado)
+        if (!['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
+          return res.status(403).json({ message: 'Solo anfitriones pueden ascenderse a anfitrión persistente' });
+        }
+        // ¡Permitir!
+      } else {
+        // Cualquier otro caso, sólo anfitrión_persistente puede subir a otro
+        if (adminData.rol !== 'anfitrion_persistente') {
+          return res.status(403).json({ message: 'Solo el anfitrión persistente puede ascender a ese rol' });
+        }
+      }
     }
-    // Si adminUid == uid, permitimos el ascenso (autonomía por QR)
-  }
+
 
 
     // Solo anfitrión o anfitrion_persistente pueden ascender invitado a anfitrion
