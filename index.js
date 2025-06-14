@@ -364,13 +364,26 @@ app.post('/session/:sessionId/user', async (req, res) => {
 app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
   try {
     const { sessionId, uid } = req.params;
-    const { rol, adminUid } = req.body; // adminUid = el que hace el cambio
+    const { rol, adminUid } = req.body; // adminUid = el que hace la petición
 
     const allowedRoles = ['anfitrion', 'anfitrion_persistente', 'invitado'];
     if (!rol || !allowedRoles.includes(rol)) {
       return res.status(400).json({ message: 'Rol inválido' });
     }
 
+    // --- BLOQUE TEMPORAL: Saltar validaciones para ascender a anfitrion_persistente ---
+    if (rol === 'anfitrion_persistente') {
+      const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
+      const snap = await userRef.once('value');
+      if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+      await userRef.update({ rol });
+      return res.json({ ok: true, message: `Rol actualizado a ${rol} (prueba sin restricción)` });
+    }
+    // --- FIN BLOQUE TEMPORAL ---
+
+    // Código original para validar permisos - COMENTADO para esta prueba
+    /*
     // Leer datos de quien hace la petición (adminUid)
     const adminSnap = await db.ref(`sessions/${sessionId}/usuarios/${adminUid}`).once('value');
     const adminData = adminSnap.val();
@@ -378,23 +391,16 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
 
     // Solo anfitrión persistente puede poner anfitrion_persistente
     if (rol === 'anfitrion_persistente') {
-      // Si el que hace la petición es el mismo usuario al que va a subir de rol (o sea, por QR propio)
       if (adminUid === uid) {
-        // Permitimos que el anfitrión actual se ascienda a sí mismo (QR propio)
-        // Pero solo si ya es anfitrión (no invitado)
         if (!['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
           return res.status(403).json({ message: 'Solo anfitriones pueden ascenderse a anfitrión persistente' });
         }
-        // ¡Permitir!
       } else {
-        // Cualquier otro caso, sólo anfitrión_persistente puede subir a otro
         if (adminData.rol !== 'anfitrion_persistente') {
           return res.status(403).json({ message: 'Solo el anfitrión persistente puede ascender a ese rol' });
         }
       }
     }
-
-
 
     // Solo anfitrión o anfitrion_persistente pueden ascender invitado a anfitrion
     if (rol === 'anfitrion' && !['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
@@ -405,19 +411,22 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
     if (adminData.rol !== 'anfitrion_persistente' && rol !== 'anfitrion') {
       return res.status(403).json({ message: 'Solo el anfitrión persistente puede degradar a ese rol' });
     }
+    */
 
-    // Actualizar rol del usuario
+    // Actualizar rol del usuario para roles distintos de anfitrion_persistente
     const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
     const snap = await userRef.once('value');
     if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
 
     await userRef.update({ rol });
     res.json({ ok: true, message: `Rol actualizado a ${rol}` });
+
   } catch (err) {
     console.error('Error cambiando rol', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 
 
