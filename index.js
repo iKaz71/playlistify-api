@@ -339,22 +339,33 @@ app.post('/session/:sessionId/user', async (req, res) => {
       return res.status(400).json({ message: 'Datos incompletos' });
     }
 
-    // Default a invitado si mando rol
-    const rolFinal = rol || 'invitado';
+    // Consulta usuario actual
+    const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
+    const userSnap = await userRef.once('value');
+    const userData = userSnap.val();
 
-    await db.ref(`sessions/${sessionId}/usuarios/${uid}`).set({
+    // Si ya existe y no se está pidiendo cambiar el rol, conserva el rol actual
+    let rolFinal = 'invitado';
+    if (userData) {
+      rolFinal = rol || userData.rol || 'invitado';
+    } else {
+      rolFinal = rol || 'invitado';
+    }
+
+    await userRef.set({
       nombre,
       dispositivo,
       rol: rolFinal,
-      lastSeen: Date.now()  // <-- Aquí SIEMPRE que registra/actualiza
+      lastSeen: Date.now()
     });
 
-    res.json({ ok: true, message: 'Usuario registrado/actualizado', uid });
+    res.json({ ok: true, message: 'Usuario registrado/actualizado', uid, rol: rolFinal });
   } catch (err) {
     console.error('Error agregando usuario', err);
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 
 //-------------------------------------------------
