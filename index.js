@@ -363,7 +363,9 @@ app.post('/session/:sessionId/user', async (req, res) => {
 
 app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
   try {
-   const allowedRoles = ['anfitrion', 'admin', 'invitado'];
+    const { sessionId, uid } = req.params;
+    const { rol, adminUid } = req.body; // adminUid = el que hace la petición
+    const allowedRoles = ['anfitrion', 'admin', 'invitado'];
     if (!rol || !allowedRoles.includes(rol)) {
       return res.status(400).json({ message: 'Rol inválido' });
     }
