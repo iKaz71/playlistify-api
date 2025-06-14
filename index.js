@@ -363,16 +363,13 @@ app.post('/session/:sessionId/user', async (req, res) => {
 
 app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
   try {
-    const { sessionId, uid } = req.params;
-    const { rol, adminUid } = req.body; // adminUid = el que hace la petición
-
-    const allowedRoles = ['anfitrion', 'anfitrion_persistente', 'invitado'];
+   const allowedRoles = ['anfitrion', 'admin', 'invitado'];
     if (!rol || !allowedRoles.includes(rol)) {
       return res.status(400).json({ message: 'Rol inválido' });
     }
 
-    // --- BLOQUE TEMPORAL: Saltar validaciones para ascender a anfitrion_persistente ---
-    if (rol === 'anfitrion_persistente') {
+    // --- BLOQUE TEMPORAL: Saltar validaciones para ascender a admin ---
+    if (rol === 'admin') {
       const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
       const snap = await userRef.once('value');
       if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -380,6 +377,8 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
       await userRef.update({ rol });
       return res.json({ ok: true, message: `Rol actualizado a ${rol} (prueba sin restricción)` });
     }
+
+
     // --- FIN BLOQUE TEMPORAL ---
 
     // Código original para validar permisos - COMENTADO para esta prueba
@@ -389,31 +388,31 @@ app.post('/session/:sessionId/user/:uid/role', async (req, res) => {
     const adminData = adminSnap.val();
     if (!adminData) return res.status(403).json({ message: 'Acceso denegado (no admin)' });
 
-    // Solo anfitrión persistente puede poner anfitrion_persistente
-    if (rol === 'anfitrion_persistente') {
+    // Solo anfitrión persistente puede poner admin
+    if (rol === 'admin') {
       if (adminUid === uid) {
-        if (!['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
+        if (!['anfitrion', 'admin'].includes(adminData.rol)) {
           return res.status(403).json({ message: 'Solo anfitriones pueden ascenderse a anfitrión persistente' });
         }
       } else {
-        if (adminData.rol !== 'anfitrion_persistente') {
+        if (adminData.rol !== 'admin') {
           return res.status(403).json({ message: 'Solo el anfitrión persistente puede ascender a ese rol' });
         }
       }
     }
 
-    // Solo anfitrión o anfitrion_persistente pueden ascender invitado a anfitrion
-    if (rol === 'anfitrion' && !['anfitrion', 'anfitrion_persistente'].includes(adminData.rol)) {
+    // Solo anfitrión o admin pueden ascender invitado a anfitrion
+    if (rol === 'anfitrion' && !['anfitrion', 'admin'].includes(adminData.rol)) {
       return res.status(403).json({ message: 'Solo anfitriones pueden ascender invitados' });
     }
 
-    // No se permite degradar a anfitrion_persistente
-    if (adminData.rol !== 'anfitrion_persistente' && rol !== 'anfitrion') {
+    // No se permite degradar a admin
+    if (adminData.rol !== 'admin' && rol !== 'anfitrion') {
       return res.status(403).json({ message: 'Solo el anfitrión persistente puede degradar a ese rol' });
     }
     */
 
-    // Actualizar rol del usuario para roles distintos de anfitrion_persistente
+    // Actualizar rol del usuario para roles distintos de admin
     const userRef = db.ref(`sessions/${sessionId}/usuarios/${uid}`);
     const snap = await userRef.once('value');
     if (!snap.exists()) return res.status(404).json({ message: 'Usuario no encontrado' });
