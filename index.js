@@ -140,13 +140,14 @@ app.get('/queueOrder/:sessionId', async (req, res) => {
 });
 
 //-------------------------------------------------
-// Agregar canción a la cola (y array de orden)
+// Agregar canción a la cola (y array de orden) con UID
 //-------------------------------------------------
 app.post('/queue/add', async (req, res) => {
   try {
-    const { sessionId, id, titulo, usuario, thumbnailUrl, duration } = req.body;
+    // Nota: Se agregó uid a los datos requeridos
+    const { sessionId, id, titulo, usuario, thumbnailUrl, duration, uid } = req.body;
 
-    if (!sessionId || !id || !titulo || !usuario || !thumbnailUrl || !duration) {
+    if (!sessionId || !id || !titulo || !usuario || !thumbnailUrl || !duration || !uid) {
       return res.status(400).json({ message: 'Datos incompletos' });
     }
 
@@ -155,7 +156,8 @@ app.post('/queue/add', async (req, res) => {
     const isIsoFormat = /^PT(\d+H)?(\d+M)?(\d+S)?$/.test(duration);
     const durationIso = isIsoFormat ? duration : convertirADuracionISO(duration);
 
-    const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration: durationIso };
+    // 🔥 IMPORTANTE: Guardar también el uid en la canción
+    const nuevaCancion = { id, titulo, usuario, thumbnailUrl, duration: durationIso, uid };
     const pushRef = await ref.push(nuevaCancion);
 
     // Actualiza el array de orden
@@ -183,6 +185,7 @@ app.post('/queue/add', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
 
 //-------------------------------------------------
 // Función auxiliar para convertir duración "3:14" → "PT3M14S"
@@ -554,5 +557,38 @@ app.post('/session/:sessionId/user/:uid/kick', async (req, res) => {
     res.status(500).json({ message: 'Internal error' });
   }
 });
+
+//-------------------------------------------------
+//  Actualizar nombre en todas las canciones del usuario en la sala
+//-------------------------------------------------
+app.post('/session/:sessionId/user/:uid/updateName', async (req, res) => {
+  try {
+    const { sessionId, uid } = req.params;
+    const { nuevoNombre } = req.body;
+    if (!nuevoNombre) return res.status(400).json({ message: 'Falta nuevo nombre' });
+
+    const queueRef = db.ref(`queues/${sessionId}`);
+    const snapshot = await queueRef.once('value');
+    const updates = {};
+
+    snapshot.forEach(child => {
+      const cancion = child.val();
+      if (cancion.uid === uid) {
+        updates[`${child.key}/usuario`] = nuevoNombre;
+      }
+    });
+
+    if (Object.keys(updates).length === 0) {
+      return res.json({ ok: true, message: 'No se encontraron canciones para actualizar' });
+    }
+
+    await queueRef.update(updates);
+    res.json({ ok: true, actualizadas: Object.keys(updates).length });
+  } catch (err) {
+    console.error('Error actualizando nombre de usuario en canciones', err);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 
 
