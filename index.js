@@ -248,9 +248,9 @@ app.post('/queue/remove', async (req, res) => {
     if (!cancion) return res.status(404).json({ message: 'Canción no encontrada' });
 
     // Solo permite eliminar si eres host o quien la subió
-    if (!(isHost || cancion.usuario === userId)) {
-      return res.status(403).json({ message: 'No tienes permiso para eliminar esta canción' });
-    }
+    //if (!(isHost || cancion.usuario === userId)) {
+    //  return res.status(403).json({ message: 'No tienes permiso para eliminar esta canción' });
+    //}
 
     // Elimina la canción del objeto
     await db.ref(`queues/${sessionId}/${pushKey}`).remove();
