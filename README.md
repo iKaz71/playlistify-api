@@ -52,15 +52,52 @@ FIREBASE_DATABASE_URL=https://playlistify-f1a04-default-rtdb.firebaseio.com
   npm run dev
   ```
 
-## 📚 Endpoints disponibles
+## 📚 Endpoints principales
 
-| Método | Endpoint | Descripción |
-|:------:|:--------:|:-----------:|
-| `POST` | `/session/create` | Crear nueva sesión |
-| `POST` | `/session/verify` | Verificar código de sesión |
-| `GET`  | `/queue/:sessionId` | Obtener la cola de reproducción |
+| Método | Endpoint                  | Descripción                               |
+|:------:|:-------------------------:|:------------------------------------------|
+| POST   | `/session/create`         | Crear nueva sesión                        |
+| POST   | `/session/verify`         | Verificar código de sesión                |
+| GET    | `/queue/:sessionId`       | Obtener la cola de reproducción           |
+| GET    | `/queueOrder/:sessionId`  | Obtener el orden de la cola               |
+| POST   | `/queue/add`              | Agregar canción a la cola                 |
+| POST   | `/queue/remove`           | Eliminar canción de la cola               |
+| POST   | `/queue/playnext`         | Mover canción como siguiente a reproducir |
+| GET    | `/session/:sessionId`     | Obtener datos de una sesión               |
+| POST   | `/session/:sessionId/user`| Agregar/actualizar usuario en sala        |
+| POST   | `/session/:sessionId/user/:uid/role` | Cambiar rol de usuario         |
+| GET    | `/session/:sessionId/users`| Obtener todos los usuarios de la sala     |
+| POST   | `/session/:sessionId/user/:uid/ban`   | Banear usuario                 |
+| POST   | `/session/:sessionId/user/:uid/unban` | Desbanear usuario               |
+| GET    | `/session/:sessionId/banned`| Obtener usuarios baneados               |
+| POST   | `/session/:sessionId/refresh` | Refrescar sala/código de conexión      |
+| POST   | `/session/:sessionId/user/:uid/kick`  | Expulsar usuario                  |
+| POST   | `/session/:sessionId/user/:uid/updateName` | Actualizar nombre en canciones |
+| POST   | `/hosts/default`           | Guardar anfitriones por defecto en sala   |
+
+---
+
+## 🧩 Detalles de uso
+
+- **Seguridad:** Todas las operaciones críticas requieren datos completos y válidos.  
+- **Integración:** Ideal para usarse junto con las apps Playlistify Android, iOS y TV.
+- **Base de datos:** Todos los datos de sesión, usuarios, colas y estado de reproducción se almacenan en Firebase Realtime Database.
+- **Despliegue:** Railway recomendado, pero compatible con cualquier entorno Node.js moderno.
+
+---
 
 ## 💜 Licencia
 
-Proyecto para uso personal y educativo.
+Este proyecto está licenciado bajo la [MIT License](LICENSE).
+
+---
+
+## 🚀 Ecosistema Playlistify
+
+- [Playlistify Android](https://github.com/iKaz71/Playlistify-Android)
+- [Playlistify iOS](https://github.com/iKaz71/Playlistify-iOS)
+- [TV Playlistify](https://github.com/iKaz71/TvPlaylistify)
+
+---
+
 
